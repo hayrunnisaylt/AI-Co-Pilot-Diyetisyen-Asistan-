@@ -1,4 +1,7 @@
 import { Stack } from 'expo-router';
+import '../global.css'; // YENİ EKLENEN SATIR
+
+
 
 export default function RootLayout() {
   return (
