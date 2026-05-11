@@ -15,8 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 
-// Kendi bilgisayarının / sunucunun IP adresini buraya yazmalısın
-const API_URL = 'http://192.168.1.XX:8000'; // ÖRNEK: Backend adresini buraya gir
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -35,7 +34,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const response = await axios.post(`${API_URL}/login`, {
-        email: email.trim(), 
+        username: email.trim(), 
         password,
       });
 
@@ -66,8 +65,8 @@ export default function LoginScreen() {
   };
 
   return (
-    {/* ÇÖZÜM BURADA: className yerine doğrudan style verdik */}
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F4F7FB' }}>
+      {/* ÇÖZÜM BURADA: className yerine doğrudan style verdik */}
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
@@ -87,10 +86,11 @@ export default function LoginScreen() {
           </View>
 
           {/* Rol Seçici (Tab) */}
-          <View className="flex-row bg-gray-200/60 p-1 rounded-2xl mb-8">
+          <View className="flex-row p-1 rounded-2xl mb-8" style={{ backgroundColor: 'rgba(229, 231, 235, 0.6)' }}>
             <TouchableOpacity 
               onPress={() => setRole('danisan')}
-              className={`flex-1 py-3 rounded-xl items-center ${role === 'danisan' ? 'bg-white shadow-sm' : ''}`}
+              className={`flex-1 py-3 rounded-xl items-center ${role === 'danisan' ? 'bg-white' : ''}`}
+              style={role === 'danisan' ? { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 } : {}}
             >
               <Text className={`font-bold ${role === 'danisan' ? 'text-emerald-600' : 'text-gray-500'}`}>
                 Danışan Girişi
@@ -99,7 +99,8 @@ export default function LoginScreen() {
             
             <TouchableOpacity 
               onPress={() => setRole('diyetisyen')}
-              className={`flex-1 py-3 rounded-xl items-center ${role === 'diyetisyen' ? 'bg-white shadow-sm' : ''}`}
+              className={`flex-1 py-3 rounded-xl items-center ${role === 'diyetisyen' ? 'bg-white' : ''}`}
+              style={role === 'diyetisyen' ? { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 } : {}}
             >
               <Text className={`font-bold ${role === 'diyetisyen' ? 'text-indigo-600' : 'text-gray-500'}`}>
                 Diyetisyen Girişi
@@ -110,7 +111,8 @@ export default function LoginScreen() {
           {/* Form Alanı */}
           <View>
             <TextInput 
-              className="w-full bg-white border border-gray-100 rounded-2xl px-5 py-4 mb-4 text-base text-gray-800 shadow-sm"
+              className="w-full bg-white border border-gray-100 rounded-2xl px-5 py-4 mb-4 text-base text-gray-800"
+              style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 }}
               placeholder="E-posta Adresiniz"
               placeholderTextColor="#9ca3af"
               keyboardType="email-address"
@@ -121,7 +123,8 @@ export default function LoginScreen() {
             />
 
             <TextInput 
-              className="w-full bg-white border border-gray-100 rounded-2xl px-5 py-4 mb-6 text-base text-gray-800 shadow-sm"
+              className="w-full bg-white border border-gray-100 rounded-2xl px-5 py-4 mb-6 text-base text-gray-800"
+              style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 }}
               placeholder="Şifreniz"
               placeholderTextColor="#9ca3af"
               secureTextEntry
@@ -131,7 +134,8 @@ export default function LoginScreen() {
 
             {/* Giriş Yap Butonu */}
             <TouchableOpacity 
-              className={`w-full py-4 rounded-2xl shadow-md items-center flex-row justify-center ${role === 'danisan' ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+              className={`w-full py-4 rounded-2xl items-center flex-row justify-center ${role === 'danisan' ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+              style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 }}
               onPress={handleLogin}
               disabled={isLoading}
             >

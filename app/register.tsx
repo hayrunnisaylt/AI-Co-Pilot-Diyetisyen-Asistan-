@@ -24,7 +24,7 @@ export default function AuthScreen() {
   const [role, setRole] = useState('danisan'); 
 
   // 🔴
-  const API_URL = "https://nonexpanded-conor-radially.ngrok-free.dev"; 
+  const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
   const handleAuth = async () => {
     if (!username || !password) {

@@ -18,7 +18,8 @@ export default function DiyetisyenHome() {
   const [hastalarinYemekleri, setHastalarinYemekleri] = useState([]);
 
   // 🔴 
-  const API_URL = "https://nonexpanded-conor-radially.ngrok-free.dev"; 
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
+ 
 
   useEffect(() => {
     kullaniciAdiniAl();
