@@ -4,193 +4,168 @@ import {
   Text, 
   TextInput, 
   TouchableOpacity, 
-  StyleSheet, 
-  Alert, 
   KeyboardAvoidingView, 
-  Platform 
+  Platform, 
+  ActivityIndicator, 
+  Alert 
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LinearGradient } from 'expo-linear-gradient';
+import axios from 'axios';
+import { Ionicons } from '@expo/vector-icons';
 
-export default function AuthScreen() {
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
+
+export default function RegisterScreen() {
   const router = useRouter();
-  const [isLogin, setIsLogin] = useState(true); // true ise Giriş, false ise Kayıt ekranı
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   
-  // Sadece kayıt olurken kullanılacak rol seçimi (Varsayılan: danisan)
-  const [role, setRole] = useState('danisan'); 
+  const [fullname, setFullname] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [role, setRole] = useState('danisan');
+  const [isLoading, setIsLoading] = useState(false);
 
-  // 🔴
-  const API_URL = process.env.EXPO_PUBLIC_API_URL;
-
-  const handleAuth = async () => {
-    if (!username || !password) {
-      Alert.alert("Uyarı", "Lütfen tüm alanları doldurun.");
+  const handleRegister = async () => {
+    if (!fullname || !email || !password || !passwordConfirm) {
+      Alert.alert("Eksik Bilgi", "Lütfen tüm alanları doldurunuz.");
+      return;
+    }
+    
+    if (password !== passwordConfirm) {
+      Alert.alert("Hata", "Şifreler birbiriyle uyuşmuyor.");
       return;
     }
 
+    setIsLoading(true);
+    
     try {
-      if (isLogin) {
-        // --- GİRİŞ YAPMA İŞLEMİ ---
-        const response = await axios.post(`${API_URL}/login`, { username, password });
-        
-        if (response.data.status === 'success') {
-          const userRole = response.data.role; // Backend'den (MongoDB) dönen rol
-          
-          // Bilgileri cihaza kaydet
-          await AsyncStorage.setItem('username', username);
-          await AsyncStorage.setItem('role', userRole);
-          
-          // Role göre yönlendir
-          if (userRole === 'diyetisyen') {
-            router.replace('/(tabs)/diyetisyen-home');
-          } else {
-            router.replace('/(tabs)/hasta-home');
-          }
+      const response = await axios.post(`${API_URL}/register`, { 
+        fullname: fullname.trim(),
+        email: email.trim().toLowerCase(), 
+        password, 
+        role 
+      }, {
+        headers: {
+          'ngrok-skip-browser-warning': 'true'
         }
-      } else {
-        // --- KAYIT OLMA İŞLEMİ ---
-        const response = await axios.post(`${API_URL}/register`, { 
-          username, 
-          password, 
-          role 
-        });
-        
-        if (response.data.status === 'success') {
-          Alert.alert("Başarılı", "Hesabınız oluşturuldu! Şimdi giriş yapabilirsiniz.");
-          setIsLogin(true); // Kayıt başarılıysa giriş ekranına döndür
-          setPassword(''); // Şifreyi temizle
-        }
+      });
+      
+      if (response.data.status === 'success') {
+        Alert.alert("Başarılı", "Hesabınız oluşturuldu! Şimdi giriş yapabilirsiniz.");
+        router.push('/');
       }
     } catch (error: any) {
-      const errorMsg = error.response?.data?.detail || "Sunucuya ulaşılamadı. Ngrok linkini kontrol et.";
+      const errorMsg = error.response?.data?.detail || error.message || "Sunucuya ulaşılamadı.";
       Alert.alert("Hata", errorMsg);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <LinearGradient colors={['#fdfcfb', '#e2d1c3']} style={styles.container}>
+    <SafeAreaView className="flex-1 bg-slate-50">
       <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"} 
-        style={styles.content}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        className="flex-1"
       >
-        <View style={styles.headerContainer}>
-          <Text style={styles.title}>{isLogin ? 'Hoşgeldin' : 'Kayıt Ol'}</Text>
-          <Text style={styles.subtitle}>
-            {isLogin ? 'Devam etmek için giriş yapın.' : 'Yeni bir hesap oluşturun.'}
-          </Text>
-        </View>
-
-        <View style={styles.formContainer}>
-          <TextInput 
-            style={styles.input} 
-            placeholder="Kullanıcı Adı" 
-            placeholderTextColor="#888"
-            value={username} 
-            onChangeText={setUsername} 
-            autoCapitalize="none"
-          />
-          <TextInput 
-            style={styles.input} 
-            placeholder="Şifre" 
-            placeholderTextColor="#888"
-            value={password} 
-            onChangeText={setPassword} 
-            secureTextEntry 
-          />
-
-          {/* Sadece kayıt ekranında rol seçimi gösterilecek */}
-          {!isLogin && (
-            <View style={styles.roleContainer}>
-              <Text style={styles.roleLabel}>Hesap Türü:</Text>
-              <View style={styles.roleButtons}>
-                <TouchableOpacity 
-                  style={[styles.roleBtn, role === 'danisan' && styles.roleBtnActive]}
-                  onPress={() => setRole('danisan')}
-                >
-                  <Text style={[styles.roleBtnText, role === 'danisan' && styles.roleBtnTextActive]}>Danışan</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.roleBtn, role === 'diyetisyen' && styles.roleBtnActive]}
-                  onPress={() => setRole('diyetisyen')}
-                >
-                  <Text style={[styles.roleBtnText, role === 'diyetisyen' && styles.roleBtnTextActive]}>Diyetisyen</Text>
-                </TouchableOpacity>
-              </View>
+        <View className="flex-1 justify-center px-6">
+          <View className="items-center mb-8">
+            <View className="w-20 h-20 bg-indigo-100 rounded-full justify-center items-center mb-4">
+              <Ionicons name="person-add" size={36} color="#4f46e5" />
             </View>
-          )}
+            <Text className="text-3xl font-extrabold text-slate-800 tracking-tight mb-2">Kayıt Ol</Text>
+            <Text className="text-base text-slate-500 text-center px-4">
+              AI Destekli Diyetisyen Asistanınıza katılmak için bir hesap oluşturun.
+            </Text>
+          </View>
 
-          <TouchableOpacity style={styles.mainButton} activeOpacity={0.8} onPress={handleAuth}>
-            <Text style={styles.mainButtonText}>{isLogin ? 'Giriş Yap' : 'Hesap Oluştur'}</Text>
-          </TouchableOpacity>
+          <View className="flex-row bg-slate-200 p-1 rounded-2xl mb-8">
+            <TouchableOpacity 
+              onPress={() => setRole('danisan')}
+              className={`flex-1 py-3 rounded-xl items-center border ${role === 'danisan' ? 'bg-white border-slate-200' : 'bg-transparent border-transparent'}`}
+            >
+              <Text className={`font-bold ${role === 'danisan' ? 'text-emerald-600' : 'text-slate-500'}`}>
+                Danışan Olarak
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              onPress={() => setRole('diyetisyen')}
+              className={`flex-1 py-3 rounded-xl items-center border ${role === 'diyetisyen' ? 'bg-white border-slate-200' : 'bg-transparent border-transparent'}`}
+            >
+              <Text className={`font-bold ${role === 'diyetisyen' ? 'text-indigo-600' : 'text-slate-500'}`}>
+                Diyetisyen Olarak
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View>
+            <TextInput 
+              className="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 mb-4 text-base text-slate-800"
+              placeholder="Ad Soyad"
+              placeholderTextColor="#9ca3af"
+              autoCapitalize="words"
+              value={fullname}
+              onChangeText={setFullname}
+            />
+
+            <TextInput 
+              className="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 mb-4 text-base text-slate-800"
+              placeholder="E-posta Adresiniz"
+              placeholderTextColor="#9ca3af"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              value={email}
+              onChangeText={setEmail}
+            />
+
+            <TextInput 
+              className="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 mb-4 text-base text-slate-800"
+              placeholder="Şifreniz"
+              placeholderTextColor="#9ca3af"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+            />
+
+            <TextInput 
+              className="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 mb-6 text-base text-slate-800"
+              placeholder="Şifrenizi Tekrar Girin"
+              placeholderTextColor="#9ca3af"
+              secureTextEntry
+              value={passwordConfirm}
+              onChangeText={setPasswordConfirm}
+            />
+
+            <TouchableOpacity 
+              className={`w-full py-4 rounded-2xl items-center flex-row justify-center active:opacity-80 ${role === 'danisan' ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+              onPress={handleRegister}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <>
+                  <Text className="text-white text-lg font-bold mr-2">Hesap Oluştur</Text>
+                  <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          <View className="flex-row justify-center mt-8">
+            <Text className="text-slate-500 text-base">Zaten hesabınız var mı? </Text>
+            <TouchableOpacity onPress={() => router.push('/')}>
+              <Text className={`text-base font-bold ${role === 'danisan' ? 'text-emerald-600' : 'text-indigo-600'}`}>
+                Giriş Yap
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
-
-        <View style={styles.footerContainer}>
-          <Text style={styles.footerText}>
-            {isLogin ? "Hesabın yok mu? " : "Zaten hesabın var mı? "}
-          </Text>
-          <TouchableOpacity onPress={() => setIsLogin(!isLogin)}>
-            <Text style={styles.footerLink}>{isLogin ? "Kayıt Ol" : "Giriş Yap"}</Text>
-          </TouchableOpacity>
-        </View>
-
       </KeyboardAvoidingView>
-    </LinearGradient>
+    </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: { flex: 1, justifyContent: 'center', paddingHorizontal: 30 },
-  headerContainer: { marginBottom: 40 },
-  title: { fontSize: 38, fontWeight: '900', color: '#2d2d3a', letterSpacing: -1 },
-  subtitle: { fontSize: 16, color: '#555', marginTop: 10, fontWeight: '500' },
-  formContainer: { gap: 15 },
-  input: {
-    backgroundColor: '#fff',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    fontSize: 16,
-    color: '#333',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  roleContainer: { marginTop: 5, marginBottom: 5 },
-  roleLabel: { fontSize: 14, color: '#555', marginBottom: 8, fontWeight: '600' },
-  roleButtons: { flexDirection: 'row', gap: 10 },
-  roleBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    alignItems: 'center',
-    backgroundColor: '#f9f9f9',
-  },
-  roleBtnActive: { backgroundColor: '#2d2d3a', borderColor: '#2d2d3a' },
-  roleBtnText: { color: '#555', fontWeight: '600' },
-  roleBtnTextActive: { color: '#fff' },
-  mainButton: {
-    backgroundColor: '#2d2d3a',
-    paddingVertical: 18,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 5,
-  },
-  mainButtonText: { color: '#ffffff', fontSize: 18, fontWeight: '700' },
-  footerContainer: { flexDirection: 'row', justifyContent: 'center', marginTop: 30 },
-  footerText: { color: '#555', fontSize: 15 },
-  footerLink: { color: '#2d2d3a', fontSize: 15, fontWeight: 'bold' },
-});

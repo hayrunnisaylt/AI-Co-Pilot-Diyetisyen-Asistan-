@@ -1,6 +1,6 @@
 import os
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -48,12 +48,13 @@ def get_password_hash(password):
 
 # --- 4. VERİ MODELLERİ (PYDANTIC) ---
 class UserRegister(BaseModel):
-    username: str
+    fullname: str
+    email: str
     password: str
-    role: str  # "diyetisyen" veya "danisan" gelecek
+    role: str
 
 class UserLogin(BaseModel):
-    username: str
+    email: str
     password: str
 
 # Kalori Cetveli
@@ -74,14 +75,13 @@ except Exception as e:
 
 @app.post("/register")
 async def register(user: UserRegister):
-    # Kullanıcı veritabanında var mı kontrol et
-    if users_collection.find_one({"username": user.username}):
-        raise HTTPException(status_code=400, detail="Bu kullanıcı adı zaten var.")
+    if users_collection.find_one({"email": user.email}):
+        raise HTTPException(status_code=400, detail="Bu email adresi zaten kullanılıyor.")
     
-    # Şifreyi şifrele (hash) ve Atlas'a kaydet
     hashed_password = get_password_hash(user.password)
     new_user = {
-        "username": user.username,
+        "fullname": user.fullname,
+        "email": user.email,
         "password_hash": hashed_password,
         "role": user.role
     }
@@ -90,21 +90,20 @@ async def register(user: UserRegister):
 
 @app.post("/login")
 async def login(user: UserLogin):
-    # Kullanıcıyı Atlas'ta bul
-    db_user = users_collection.find_one({"username": user.username})
+    db_user = users_collection.find_one({"$or": [{"email": user.email}, {"username": user.email}]})
     
-    # Kullanıcı yoksa veya şifreler eşleşmiyorsa hata fırlat
     if not db_user or not verify_password(user.password, db_user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Kullanıcı adı veya şifre hatalı.")
+        raise HTTPException(status_code=401, detail="Email adresi veya şifre hatalı.")
     
     return {
         "status": "success", 
-        "username": db_user["username"], 
+        "email": db_user.get("email", db_user.get("username", "")), 
+        "fullname": db_user.get("fullname", db_user.get("username", "")),
         "role": db_user.get("role", "danisan")
     }
 
 @app.post("/tahmin-et")
-async def tahmin_et(hasta_adi: str = Form(...), file: UploadFile = File(...)):
+async def tahmin_et(hasta_email: str = Form(...), hasta_fullname: str = Form(...), file: UploadFile = File(...)):
     temp_filename = f"temp_{file.filename}"
     with open(temp_filename, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
@@ -113,7 +112,6 @@ async def tahmin_et(hasta_adi: str = Form(...), file: UploadFile = File(...)):
     
     if model:
         results = model(temp_filename, conf=0.25)
-        # Eğer model hiçbir şey bulamazsa
         if not results[0].boxes:
             tespitler.append({"yemek_adi": "Tanımlanamadı", "kalori": 0, "guven_orani": 0.0})
         else:
@@ -129,9 +127,9 @@ async def tahmin_et(hasta_adi: str = Form(...), file: UploadFile = File(...)):
                         "guven_orani": conf
                     })
                     
-                    # Yemek analizini MongoDB Atlas'a kaydet
                     yemekler_collection.insert_one({
-                        "hasta_adi": hasta_adi,
+                        "hasta_email": hasta_email,
+                        "hasta_adi": hasta_fullname,
                         "yemek_adi": class_name,
                         "kalori": cal,
                         "guven_orani": conf,
@@ -143,18 +141,169 @@ async def tahmin_et(hasta_adi: str = Form(...), file: UploadFile = File(...)):
 
     return {"sonuc": tespitler}
 
+@app.get("/diyetisyenler")
+async def diyetisyenleri_getir():
+    cursor = users_collection.find({"role": "diyetisyen"}, {"email": 1, "username": 1, "fullname": 1, "_id": 0})
+    diyetisyenler = [
+        {
+            "email": user.get("email", user.get("username", "")), 
+            "fullname": user.get("fullname", user.get("username", ""))
+        } 
+        for user in cursor
+    ]
+    return {"diyetisyenler": diyetisyenler}
+
+@app.post("/diyetisyen-sec")
+async def diyetisyen_sec(hasta_email: str = Form(...), diyetisyen_email: str = Form(...)):
+    result = users_collection.update_one(
+        {"email": hasta_email},
+        {"$set": {"istenen_diyetisyen": diyetisyen_email, "diyetisyen_status": "beklemede"}}
+    )
+    if result.modified_count > 0:
+        return {"status": "success", "message": "Diyetisyen isteği başarıyla gönderildi."}
+    else:
+        return {"status": "info", "message": "İstek gönderilemedi veya kullanıcı bulunamadı."}
+
+@app.get("/hasta-diyetisyen")
+async def hasta_diyetisyen_getir(hasta_email: str):
+    user = users_collection.find_one({"$or": [{"email": hasta_email}, {"username": hasta_email}]})
+    if user:
+        # Resolve diyetisyen fullname
+        diyetisyen_info = None
+        if user.get("diyetisyen"):
+            diyetisyen_info = users_collection.find_one({"$or": [{"email": user.get("diyetisyen")}, {"username": user.get("diyetisyen")}]})
+        istenen_diyetisyen_info = None
+        if user.get("istenen_diyetisyen"):
+            istenen_diyetisyen_info = users_collection.find_one({"$or": [{"email": user.get("istenen_diyetisyen")}, {"username": user.get("istenen_diyetisyen")}]})
+            
+        return {
+            "diyetisyen": user.get("diyetisyen"),
+            "diyetisyen_fullname": diyetisyen_info.get("fullname") if diyetisyen_info else None,
+            "istenen_diyetisyen": user.get("istenen_diyetisyen"),
+            "istenen_diyetisyen_fullname": istenen_diyetisyen_info.get("fullname") if istenen_diyetisyen_info else None,
+            "diyetisyen_status": user.get("diyetisyen_status")
+        }
+    return {"diyetisyen": None, "istenen_diyetisyen": None, "diyetisyen_status": None}
+
+@app.get("/diyetisyen-istekleri")
+async def istekleri_getir(diyetisyen_email: str):
+    cursor = users_collection.find({"istenen_diyetisyen": diyetisyen_email, "diyetisyen_status": "beklemede"})
+    istekler = [
+        {
+            "email": user.get("email", user.get("username", "")), 
+            "fullname": user.get("fullname", user.get("username", ""))
+        } 
+        for user in cursor
+    ]
+    return {"istekler": istekler}
+
+@app.post("/diyetisyen-istek-cevapla")
+async def istek_cevapla(hasta_email: str = Form(...), durum: str = Form(...)):
+    if durum == "kabul":
+        user = users_collection.find_one({"email": hasta_email})
+        if user and user.get("istenen_diyetisyen"):
+            diyetisyen_adi = user.get("istenen_diyetisyen")
+            users_collection.update_one(
+                {"email": hasta_email},
+                {"$set": {"diyetisyen": diyetisyen_adi, "diyetisyen_status": "onaylandi"}}
+            )
+            return {"status": "success", "message": "İstek kabul edildi."}
+    elif durum == "red":
+        users_collection.update_one(
+            {"email": hasta_email},
+            {"$unset": {"istenen_diyetisyen": "", "diyetisyen_status": ""}}
+        )
+        return {"status": "success", "message": "İstek reddedildi."}
+    return {"status": "error", "message": "Geçersiz işlem."}
+
 @app.get("/diyetisyen-verileri")
-async def verileri_getir():
-    # Atlas'tan tüm verileri en yeniden en eskiye doğru çek
-    cursor = yemekler_collection.find().sort("_id", -1)
+async def verileri_getir(diyetisyen_email: str = None):
+    if diyetisyen_email:
+        hastalar = users_collection.find({"diyetisyen": diyetisyen_email})
+        hasta_emailleri = [hasta["email"] for hasta in hastalar]
+        cursor = yemekler_collection.find({"hasta_email": {"$in": hasta_emailleri}}).sort("_id", -1)
+    else:
+        cursor = yemekler_collection.find().sort("_id", -1)
+        
     veriler = []
     for row in cursor:
-        # MongoDB'nin özel ObjectId formatını React Native'in okuyabileceği formata çevir
         row["id"] = str(row["_id"]) 
-        del row["_id"] # Eski objeyi sil
+        del row["_id"]
         veriler.append(row)
         
     return {"veriler": veriler}
+
+@app.get("/hasta-ozet")
+async def hasta_ozet(hasta_email: str):
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    
+    user = users_collection.find_one({"email": hasta_email})
+    su_gunluk = 0.0
+    if user and "su_gunlugu" in user:
+        su_gunluk = user["su_gunlugu"].get(today_str, 0.0)
+        
+    cursor = yemekler_collection.find({"hasta_email": hasta_email})
+    
+    bugun_kalori = 0
+    dun_yemekler = []
+    
+    for row in cursor:
+        tarih = row.get("tarih", "")
+        if tarih.startswith(today_str):
+            bugun_kalori += row.get("kalori", 0)
+        elif tarih.startswith(yesterday_str):
+            dun_yemekler.append({
+                "yemek_adi": row.get("yemek_adi"),
+                "kalori": row.get("kalori"),
+                "saat": tarih.split(" ")[1] if " " in tarih else tarih
+            })
+            
+    # Dünün yemeklerini en son eklenenden en eskiye doğru sırala
+    dun_yemekler.sort(key=lambda x: x["saat"], reverse=True)
+            
+    # Hedefleri hesapla
+    kilo = user.get("kilo")
+    boy = user.get("boy")
+    hedef_su = 2.5 # varsayılan
+    if kilo:
+        hedef_su = round(float(kilo) * 0.035, 1) # Her kg için 35ml su
+            
+    return {
+        "bugun_kalori": bugun_kalori,
+        "hedef_kalori": 2000,
+        "bugun_su": su_gunluk,
+        "hedef_su": hedef_su,
+        "kilo": kilo,
+        "boy": boy,
+        "dun_yemekler": dun_yemekler
+    }
+
+@app.post("/profil-guncelle")
+async def profil_guncelle(hasta_email: str = Form(...), boy: float = Form(...), kilo: float = Form(...)):
+    users_collection.update_one(
+        {"email": hasta_email},
+        {"$set": {"boy": boy, "kilo": kilo}}
+    )
+    hedef_su = round(float(kilo) * 0.035, 1)
+    return {"status": "success", "message": "Profil güncellendi.", "hedef_su": hedef_su}
+
+@app.post("/su-ekle")
+async def su_ekle(hasta_email: str = Form(...), miktar: float = Form(...)):
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    user = users_collection.find_one({"email": hasta_email})
+    
+    current_su = 0.0
+    if user and "su_gunlugu" in user:
+        current_su = user["su_gunlugu"].get(today_str, 0.0)
+        
+    new_su = current_su + miktar
+    
+    users_collection.update_one(
+        {"email": hasta_email},
+        {"$set": {f"su_gunlugu.{today_str}": new_su}}
+    )
+    return {"status": "success", "bugun_su": new_su}
 
 def start_server():
     # Ngrok'u tekrar devreye alıyoruz

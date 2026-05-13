@@ -8,7 +8,6 @@ export default function TabLayout() {
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Uygulama açıldığında kullanıcının rolünü hafızadan çekiyoruz
   useEffect(() => {
     const fetchRole = async () => {
       const userRole = await AsyncStorage.getItem('role');

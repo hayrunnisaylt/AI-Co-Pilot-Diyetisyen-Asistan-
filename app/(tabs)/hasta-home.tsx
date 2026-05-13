@@ -2,40 +2,190 @@ import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
-  StyleSheet, 
   Image, 
   TouchableOpacity, 
   Alert, 
   ActivityIndicator, 
-  ScrollView 
+  ScrollView,
+  ImageBackground
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 export default function HastaHome() {
   const [hastaAdi, setHastaAdi] = useState('Danışan');
+  const [hastaEmail, setHastaEmail] = useState('');
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
-  // Aşamaları kontrol etmek için state'ler
-  const [sonuc, setSonuc] = useState<any>(null); // YOLOv8'den dönen ilk tahmin
-  const [onaylandi, setOnaylandi] = useState(false); // Hasta tahmini onayladı mı?
-  const [geriBildirim, setGeriBildirim] = useState<string | null>(null); // AI Koç mesajı
+  const [sonuc, setSonuc] = useState<any>(null);
+  const [onaylandi, setOnaylandi] = useState(false);
+  const [geriBildirim, setGeriBildirim] = useState<string | null>(null);
 
-  // 🔴
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
+  const [diyetisyenler, setDiyetisyenler] = useState<string[]>([]);
+  const [seciliDiyetisyen, setSeciliDiyetisyen] = useState<string | null>(null);
+  const [bekleyenDiyetisyen, setBekleyenDiyetisyen] = useState<string | null>(null);
+  const [showDiyetisyenSecimi, setShowDiyetisyenSecimi] = useState(false);
+
+  const [ozet, setOzet] = useState({
+    bugun_kalori: 0,
+    hedef_kalori: 2000,
+    bugun_su: 0.0,
+    hedef_su: 2.5,
+    dun_yemekler: [],
+    boy: null,
+    kilo: null
+  });
+
+  const [boyInput, setBoyInput] = useState('');
+  const [kiloInput, setKiloInput] = useState('');
+
+  const router = useRouter();
+
+  const handleLogout = () => {
+    Alert.alert(
+      "Çıkış Yap",
+      "Hesabınızdan çıkış yapmak istediğinize emin misiniz?",
+      [
+        { text: "İptal", style: "cancel" },
+        { 
+          text: "Çıkış", 
+          style: "destructive", 
+          onPress: async () => {
+            await AsyncStorage.clear();
+            router.replace('/');
+          }
+        }
+      ]
+    );
+  };
+
+  const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
   useEffect(() => {
-    kullaniciAdiniAl();
+    const init = async () => {
+      const email = await kullaniciAdiniAl();
+      if (email) {
+        await diyetisyenDurumunuKontrolEt(email);
+        await gunlukOzetiGetir(email);
+      }
+      diyetisyenleriGetir();
+    };
+    init();
   }, []);
 
   const kullaniciAdiniAl = async () => {
-    const isim = await AsyncStorage.getItem('username');
-    if (isim) setHastaAdi(isim);
+    const email = await AsyncStorage.getItem('email');
+    const fullname = await AsyncStorage.getItem('fullname');
+    if (email) {
+      setHastaEmail(email);
+      setHastaAdi(fullname || email);
+      return email;
+    }
+    return null;
+  };
+
+  const diyetisyenDurumunuKontrolEt = async (email: string) => {
+    try {
+      const response = await axios.get(`${API_URL}/hasta-diyetisyen`, { params: { hasta_email: email } });
+      if (response.data.diyetisyen_status === "onaylandi") {
+        setSeciliDiyetisyen(response.data.diyetisyen_fullname || response.data.diyetisyen);
+        setBekleyenDiyetisyen(null);
+        setShowDiyetisyenSecimi(false);
+      } else if (response.data.diyetisyen_status === "beklemede") {
+        setBekleyenDiyetisyen(response.data.istenen_diyetisyen_fullname || response.data.istenen_diyetisyen);
+        setShowDiyetisyenSecimi(false);
+      } else {
+        setShowDiyetisyenSecimi(true);
+      }
+    } catch (error) {
+      console.error("Diyetisyen durumu çekilemedi", error);
+    }
+  };
+
+  const gunlukOzetiGetir = async (email: string) => {
+    try {
+      const response = await axios.get(`${API_URL}/hasta-ozet`, { params: { hasta_email: email } });
+      setOzet(response.data);
+    } catch (error) {
+      console.error("Günlük özet çekilemedi:", error);
+    }
+  };
+
+  const suEkle = async () => {
+    try {
+      const formData = new FormData();
+      formData.append('hasta_email', hastaEmail);
+      formData.append('miktar', '0.25'); // Bir bardak su
+
+      const response = await axios.post(`${API_URL}/su-ekle`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data', 'ngrok-skip-browser-warning': 'true' }
+      });
+      if (response.data.status === 'success') {
+        setOzet(prev => ({ ...prev, bugun_su: response.data.bugun_su }));
+      }
+    } catch (error) {
+      console.error("Su eklenemedi:", error);
+    }
+  };
+
+  const profilKaydet = async () => {
+    if (!boyInput || !kiloInput) {
+      Alert.alert("Eksik Bilgi", "Lütfen boy ve kilo bilgilerinizi giriniz.");
+      return;
+    }
+    try {
+      const formData = new FormData();
+      formData.append('hasta_email', hastaEmail);
+      formData.append('boy', boyInput);
+      formData.append('kilo', kiloInput);
+
+      const response = await axios.post(`${API_URL}/profil-guncelle`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data', 'ngrok-skip-browser-warning': 'true' }
+      });
+      if (response.data.status === 'success') {
+        Alert.alert("Başarılı", "Profiliniz güncellendi! Su hedefiniz kilonuza göre tekrar hesaplandı.");
+        await gunlukOzetiGetir(hastaEmail);
+      }
+    } catch (error) {
+      console.error("Profil güncellenemedi:", error);
+      Alert.alert("Hata", "Profil güncellenirken bir sorun oluştu.");
+    }
+  };
+
+  const diyetisyenleriGetir = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/diyetisyenler`);
+      setDiyetisyenler(response.data.diyetisyenler); // artık [{email, fullname}, ...] formatında gelebilir
+    } catch (error) {
+      console.error("Diyetisyenler getirilemedi", error);
+    }
+  };
+
+  const diyetisyenSec = async (diyetisyen: any) => {
+    try {
+      const formData = new FormData();
+      formData.append('hasta_email', hastaEmail);
+      formData.append('diyetisyen_email', diyetisyen.email);
+
+      const response = await axios.post(`${API_URL}/diyetisyen-sec`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data', 'ngrok-skip-browser-warning': 'true' }
+      });
+      
+      if (response.data.status === 'success') {
+        setBekleyenDiyetisyen(diyetisyen.fullname || diyetisyen.email);
+        setShowDiyetisyenSecimi(false);
+        Alert.alert("Başarılı", `İsteğiniz Dr. ${diyetisyen.fullname || diyetisyen.email} profiline iletildi. Onay bekleniyor.`);
+      }
+    } catch (error) {
+      console.error("Diyetisyen seçilemedi", error);
+      Alert.alert("Hata", "Diyetisyen seçilemedi.");
+    }
   };
 
   const pickImage = async () => {
@@ -54,23 +204,19 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
     if (!result.canceled) {
       setImage(result.assets[0].uri);
-      // Yeni fotoğraf seçildiğinde tüm eski aşamaları sıfırla
       setSonuc(null); 
       setOnaylandi(false);
       setGeriBildirim(null);
     }
   };
 
-  // ADIM 1: Sadece Analiz Et (Henüz Veritabanına Kaydetme)
   const analyzeImage = async () => {
     if (!image) return;
 
     setLoading(true);
     const formData = new FormData();
-    // Normalde burada sadece analiz API'sine gitmeliyiz ama şu anki backendimiz 
-    // tahmin-et kısmında direkt db'ye de yazıyor. 
-    // Not: İleride backend'de 'kaydet' ve 'sadece_tahmin_et' diye iki ayrı uç nokta yapılabilir.
-    formData.append('hasta_adi', hastaAdi); 
+    formData.append('hasta_email', hastaEmail); 
+    formData.append('hasta_fullname', hastaAdi); 
 
     const filename = image.split('/').pop();
     const match = /\.(\w+)$/.exec(filename || '');
@@ -80,11 +226,11 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
     try {
       const response = await axios.post(`${API_URL}/tahmin-et`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 'Content-Type': 'multipart/form-data', 'ngrok-skip-browser-warning': 'true' },
       });
 
       if (response.data.sonuc && response.data.sonuc.length > 0) {
-        setSonuc(response.data.sonuc[0]); // YOLO Tahminini ekrana bas
+        setSonuc(response.data.sonuc[0]);
       } else {
         Alert.alert("Bilgi", "Yemek tam olarak tanımlanamadı.");
       }
@@ -95,14 +241,11 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL;
     }
   };
 
-  // ADIM 2: Hastanın Tahmini Onaylaması ve Anlık Geri Bildirim
   const handleOnay = () => {
     setIsSaving(true);
     
-    // Anlık Geri Bildirim Simülasyonu (Burası ileride LLM / GPT API'sine bağlanacak)
-    setTimeout(() => {
+    setTimeout(async () => {
       let mesaj = "";
-      // Basit bir kural motoru simülasyonu
       if (sonuc.kalori > 400) {
         mesaj = `Bu öğün (${sonuc.yemek_adi}), diyetisyeninizin belirlediği hedeflerle biraz çelişiyor. Bir dahaki sefere daha hafif bir alternatif tercih etmeye ne dersiniz?`;
       } else {
@@ -112,73 +255,151 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL;
       setGeriBildirim(mesaj);
       setOnaylandi(true);
       setIsSaving(false);
-      
-    }, 1500); // 1.5 saniye yapay zeka düşünme efekti
+      await gunlukOzetiGetir(hastaEmail);
+    }, 1500);
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        {/* HEADER */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greetingText}>Akıllı Günlük & Koç</Text>
-            <Text style={styles.nameText}>Merhaba, {hastaAdi}</Text>
-          </View>
-          <TouchableOpacity style={styles.profileIcon}>
-            <Ionicons name="person" size={24} color="#2A3439" />
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.subtitle}>Bugün neler yedin? Fotoğrafını çek ve anında geri bildirim al.</Text>
-
-        {/* FOTOĞRAF ALANI */}
-        <View style={styles.imageContainer}>
-          {image ? (
-            <Image source={{ uri: image }} style={styles.imagePreview} />
-          ) : (
-            <View style={styles.imagePlaceholder}>
-              <Ionicons name="camera-outline" size={60} color="#ccc" />
-              <Text style={styles.placeholderText}>Yemeğinizin fotoğrafını yükleyin</Text>
+    <View className="flex-1 bg-slate-50">
+      {/* ÜST KARANLIK ALAN (HEADER) */}
+      <View className="bg-slate-800 rounded-b-[30px] pb-5">
+        <SafeAreaView edges={['top', 'left', 'right']} className="px-6 pt-2">
+          <View className="flex-row justify-between items-center">
+            <View>
+              <Text className="text-slate-300 text-lg font-medium">Akıllı Günlük & Koç</Text>
+              <Text className="text-white text-xl font-bold mt-1">Merhaba, {hastaAdi}</Text>
+              {seciliDiyetisyen && (
+                <Text className="text-emerald-400 text-sm font-medium mt-1">
+                  👨‍⚕️ Diyetisyeniniz: Dr. {seciliDiyetisyen}
+                </Text>
+              )}
+              {bekleyenDiyetisyen && (
+                <Text className="text-amber-400 text-sm font-medium mt-1">
+                  ⏳ İstek Beklemede: Dr. {bekleyenDiyetisyen}
+                </Text>
+              )}
             </View>
-          )}
-        </View>
+            <View className="flex-row gap-3 items-center">
+              <TouchableOpacity className="bg-slate-700 p-3 rounded-full relative">
+                <Ionicons name="notifications" size={22} color="#fff" />
+                <View className="absolute top-2 right-2.5 w-2 h-2 bg-emerald-400 rounded-full" />
+              </TouchableOpacity>
+              <TouchableOpacity className="bg-slate-700 p-3 rounded-full" onPress={handleLogout}>
+                <Ionicons name="log-out-outline" size={22} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
 
-        <TouchableOpacity style={styles.actionButton} onPress={pickImage}>
-          <Ionicons name="images" size={20} color="#fff" style={{ marginRight: 8 }} />
-          <Text style={styles.actionButtonText}>{image ? "Farklı Fotoğraf Seç" : "Fotoğraf Seç"}</Text>
+          {/* Arama / İletişim Çubuğu Placeholder */}
+          <View className="flex-row items-center bg-white rounded-2xl mt-6 px-4 py-3">
+            <Ionicons name="chatbubble-ellipses" size={20} color="#94a3b8" className="mr-2" />
+            <Text className="flex-1 text-base text-slate-400">
+              Yapay Zeka Koçuna bir şey sor...
+            </Text>
+          </View>
+        </SafeAreaView>
+      </View>
+
+      <ScrollView className="px-5 mt-5" showsVerticalScrollIndicator={false}>
+        
+        {/* DİYETİSYEN SEÇİM EKRANI */}
+        {showDiyetisyenSecimi && (
+          <View className="bg-white p-6 rounded-3xl border border-slate-200 mb-6 border-l-4 border-l-purple-500 shadow-sm">
+            <View className="flex-row justify-between items-center mb-2">
+              <Text className="text-sm font-bold text-slate-400 uppercase tracking-wider">Diyetisyen Seçimi</Text>
+              <Ionicons name="medical" size={18} color="#a855f7" />
+            </View>
+            <Text className="text-base text-slate-800 mt-2 mb-4">
+              Size daha iyi yardımcı olabilmemiz için lütfen bir diyetisyen seçin.
+            </Text>
+            
+            {diyetisyenler.length > 0 ? (
+              <View className="gap-2">
+                {diyetisyenler.map((diyetisyen: any, idx) => (
+                  <TouchableOpacity 
+                    key={idx} 
+                    className="py-3 px-4 rounded-xl bg-purple-50 border border-purple-100 flex-row justify-between items-center"
+                    onPress={() => diyetisyenSec(diyetisyen)}
+                  >
+                    <Text className="text-purple-800 font-bold">Dr. {diyetisyen.fullname || diyetisyen.email}</Text>
+                    <Ionicons name="chevron-forward" size={18} color="#9333ea" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              <Text className="text-slate-500 italic text-sm">Sistemde henüz kayıtlı diyetisyen bulunmuyor.</Text>
+            )}
+          </View>
+        )}
+
+        {/* KAMERA AKSİYON KARTI (Diyetisyen ekranındaki yatay kart stili) */}
+        <TouchableOpacity activeOpacity={0.8} onPress={pickImage}>
+          <ImageBackground 
+            source={{ uri: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=600' }} 
+            className="w-full h-32 rounded-3xl overflow-hidden mb-6"
+            imageStyle={{ opacity: 0.9 }}
+          >
+            <View className="flex-1 bg-black/40 p-5 justify-end flex-row items-end gap-2">
+              <Text className="text-white text-xl font-bold flex-1">
+                {image ? "Farklı Bir Fotoğraf Çek" : "Bugün ne yedin? Fotoğraf Çek"}
+              </Text>
+              <Ionicons name={image ? "images" : "camera"} size={26} color="#fff" />
+            </View>
+          </ImageBackground>
         </TouchableOpacity>
 
-        {/* ANALİZ BUTONU (Sadece fotoğraf varsa ve henüz analiz edilmediyse görünür) */}
-        {image && !sonuc && (
-          <TouchableOpacity 
-            style={[styles.analyzeButton, loading && styles.disabledButton]} 
-            onPress={analyzeImage}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.analyzeButtonText}>Yapay Zeka Analiz Et</Text>
+        {/* SEÇİLEN FOTOĞRAF VE ANALİZ */}
+        {image && (
+          <View className="mb-6">
+            <View className="w-full h-64 bg-slate-100 rounded-3xl overflow-hidden border border-slate-200 mb-4">
+              <Image source={{ uri: image }} className="w-full h-full" />
+            </View>
+
+            {!sonuc && (
+              <TouchableOpacity 
+                className={`py-4 rounded-2xl items-center active:opacity-80 ${loading ? 'bg-slate-400' : 'bg-emerald-600'}`} 
+                onPress={analyzeImage}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <View className="flex-row items-center">
+                    <Text className="text-white text-base font-bold mr-2">Yapay Zeka Analizi Başlat</Text>
+                    <Ionicons name="sparkles" size={20} color="#fff" />
+                  </View>
+                )}
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
+          </View>
         )}
 
         {/* ADIM 1: TAHMİN VE ONAY KARTI */}
         {sonuc && !onaylandi && (
-          <View style={styles.resultCard}>
-            <Text style={styles.resultTitle}>Yapay Zeka Tahmini</Text>
-            <Text style={styles.resultValue}>Fotoğrafta <Text style={{color:'#3498db'}}>{sonuc.yemek_adi}</Text> (Tahmini {sonuc.kalori} kcal) görüyorum.</Text>
-            <Text style={styles.questionText}>Bu tahmini onaylıyor musunuz?</Text>
+          <View className="bg-white p-6 rounded-3xl border border-slate-200 mb-6 border-l-4 border-l-blue-500">
+            <View className="flex-row justify-between items-center mb-2">
+              <Text className="text-sm font-bold text-slate-400 uppercase tracking-wider">Yapay Zeka Tahmini</Text>
+              <Ionicons name="sparkles" size={18} color="#3b82f6" />
+            </View>
+            <Text className="text-lg font-semibold text-slate-800 leading-relaxed">
+              Fotoğrafta <Text className="text-blue-500">{sonuc.yemek_adi}</Text> (Tahmini {sonuc.kalori} kcal) görüyorum.
+            </Text>
+            <Text className="text-base font-bold text-slate-800 mt-5 mb-4 text-center">Bu tahmini onaylıyor musunuz?</Text>
             
-            <View style={styles.confirmButtons}>
-              <TouchableOpacity style={styles.rejectBtn} onPress={() => setSonuc(null)}>
-                <Text style={styles.rejectBtnText}>Hayır, Tekrar Dene</Text>
+            <View className="flex-row gap-3">
+              <TouchableOpacity 
+                className="flex-1 py-3 rounded-xl border border-rose-500 items-center justify-center active:bg-rose-50" 
+                onPress={() => setSonuc(null)}
+              >
+                <Text className="text-rose-500 font-bold">Hayır, Tekrar</Text>
               </TouchableOpacity>
               
-              <TouchableOpacity style={styles.confirmBtn} onPress={handleOnay} disabled={isSaving}>
-                {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmBtnText}>Evet, Onaylıyorum</Text>}
+              <TouchableOpacity 
+                className="flex-1 py-3 rounded-xl bg-blue-500 items-center justify-center active:opacity-80" 
+                onPress={handleOnay} 
+                disabled={isSaving}
+              >
+                {isSaving ? <ActivityIndicator color="#fff" /> : <Text className="text-white font-bold">Evet, Onaylıyorum</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -186,56 +407,121 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
         {/* ADIM 2: ANLIK GERİ BİLDİRİM KARTI (AI KOÇ) */}
         {onaylandi && geriBildirim && (
-          <View style={[styles.feedbackCard, sonuc.kalori > 400 ? styles.feedbackWarning : styles.feedbackSuccess]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 }}>
-              <Ionicons name={sonuc.kalori > 400 ? "alert-circle" : "checkmark-circle"} size={24} color={sonuc.kalori > 400 ? "#e67e22" : "#27ae60"} />
-              <Text style={styles.feedbackTitle}>AI Koç Geri Bildirimi</Text>
+          <View className={`p-6 rounded-3xl mb-6 border-l-4 ${sonuc.kalori > 400 ? 'bg-amber-50 border-amber-400' : 'bg-emerald-50 border-emerald-500'}`}>
+            <View className="flex-row items-center mb-3 gap-2">
+              <Ionicons name={sonuc.kalori > 400 ? "alert-circle" : "checkmark-circle"} size={24} color={sonuc.kalori > 400 ? "#f59e0b" : "#10b981"} />
+              <Text className="text-lg font-bold text-slate-800">AI Koç Geri Bildirimi</Text>
             </View>
-            <Text style={styles.feedbackText}>{geriBildirim}</Text>
-            <Text style={styles.infoText}>Bu kayıt diyetisyeninize başarıyla iletildi!</Text>
+            <Text className="text-base text-slate-700 leading-relaxed">{geriBildirim}</Text>
+            <Text className="mt-4 text-xs text-slate-400 italic pt-3 border-t border-slate-200/50">
+              Bu kayıt diyetisyeninize başarıyla iletildi!
+            </Text>
           </View>
         )}
 
+        {/* FOTOĞRAF ÇEKİLMEDİYSE GÜNLÜK ÖZETİ GÖSTER */}
+        {!image && !sonuc && (
+          <>
+            <View className="flex-row justify-between items-center mb-4">
+              <Text className="text-xl font-bold text-slate-800">Günlük Özetin</Text>
+              <Ionicons name="bar-chart" size={20} color="#64748b" />
+            </View>
+
+            {/* VÜCUT BİLGİLERİ EKSİKSE GÖSTER */}
+            {!ozet.kilo && (
+              <View className="bg-white p-6 rounded-3xl border border-slate-200 mb-6 border-l-4 border-l-blue-500 shadow-sm">
+                <View className="flex-row items-center mb-3">
+                  <Ionicons name="body" size={24} color="#3b82f6" />
+                  <Text className="text-lg font-bold text-slate-800 ml-2">Seni Daha İyi Tanıyalım</Text>
+                </View>
+                <Text className="text-slate-600 mb-4">
+                  Günlük su ihtiyacını sana özel (kilona göre) hesaplayabilmemiz için boy ve kilo bilgilerine ihtiyacımız var.
+                </Text>
+                <View className="flex-row gap-4 mb-4">
+                  <View className="flex-1">
+                    <Text className="text-xs font-bold text-slate-500 mb-1 ml-1">BOY (cm)</Text>
+                    <TextInput 
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800"
+                      placeholder="170"
+                      keyboardType="numeric"
+                      value={boyInput}
+                      onChangeText={setBoyInput}
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-xs font-bold text-slate-500 mb-1 ml-1">KİLO (kg)</Text>
+                    <TextInput 
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800"
+                      placeholder="65"
+                      keyboardType="numeric"
+                      value={kiloInput}
+                      onChangeText={setKiloInput}
+                    />
+                  </View>
+                </View>
+                <TouchableOpacity 
+                  className="bg-blue-500 py-3 rounded-xl items-center active:bg-blue-600"
+                  onPress={profilKaydet}
+                >
+                  <Text className="text-white font-bold">Kaydet ve Hedeflerimi Belirle</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <View className="flex-row gap-4 mb-4">
+              <View className="flex-1 bg-white p-4 rounded-2xl border border-slate-200 border-b-4 border-b-rose-500">
+                <Text className="text-slate-500 text-xs font-bold uppercase mb-1">Alınan Kalori</Text>
+                <Text className="text-2xl font-extrabold text-slate-800">{ozet.bugun_kalori} <Text className="text-sm font-medium text-slate-400">/ {ozet.hedef_kalori}</Text></Text>
+              </View>
+              <TouchableOpacity className="flex-1 bg-white p-4 rounded-2xl border border-slate-200 border-b-4 border-b-blue-500" onPress={suEkle} activeOpacity={0.7}>
+                <View className="flex-row justify-between items-start">
+                  <Text className="text-slate-500 text-xs font-bold uppercase mb-1">Su Tüketimi</Text>
+                  <Ionicons name="add-circle" size={20} color="#3b82f6" />
+                </View>
+                <Text className="text-2xl font-extrabold text-slate-800">{ozet.bugun_su.toFixed(2)}L <Text className="text-sm font-medium text-slate-400">/ {ozet.hedef_su}L</Text></Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Motivasyon Alert Kartı */}
+            {ozet.hedef_su - ozet.bugun_su > 0 ? (
+              <View className="p-5 rounded-2xl mb-6 bg-blue-500 border border-blue-600">
+                <Text className="text-white text-sm font-semibold leading-relaxed">
+                  {ozet.kilo ? `Kilona (${ozet.kilo} kg) göre günlük içmen gereken ${ozet.hedef_su} litre suyun ` : "Günlük su hedefine ulaşmana "}
+                  sadece {(ozet.hedef_su - ozet.bugun_su).toFixed(1)} litre kaldı. Su içmek için sağdaki mavi butona basabilirsin! 💧
+                </Text>
+              </View>
+            ) : (
+              <View className="p-5 rounded-2xl mb-6 bg-emerald-500 border border-emerald-600">
+                <Text className="text-white text-sm font-semibold leading-relaxed">
+                  Tebrikler! Bugünkü {ozet.hedef_su} litrelik su hedefine ulaştın. Vücudun sana teşekkür ediyor. 💧
+                </Text>
+              </View>
+            )}
+
+            {/* Geçmiş Öğünler */}
+            <View className="flex-row justify-between items-center mb-4 mt-2">
+              <Text className="text-xl font-bold text-slate-800">Dün Neler Yedin?</Text>
+            </View>
+
+            {ozet.dun_yemekler.length > 0 ? (
+              ozet.dun_yemekler.map((yemek: any, idx) => (
+                <View key={idx} className="bg-white p-4 rounded-2xl mb-3 border-l-4 border-slate-300 border-y border-r border-slate-100">
+                  <View className="flex-row justify-between mb-1">
+                    <Text className="text-base font-bold text-slate-800">Öğün</Text>
+                    <Text className="text-xs text-slate-400 mt-1">{yemek.saat}</Text>
+                  </View>
+                  <Text className="text-lg font-semibold text-slate-700 my-1">{yemek.yemek_adi}</Text>
+                  <Text className="text-sm font-bold text-slate-500 mt-1">🔥 {yemek.kalori} kcal</Text>
+                </View>
+              ))
+            ) : (
+              <Text className="text-slate-500 text-center italic mt-2 mb-4">Dün için bir öğün kaydı bulunamadı.</Text>
+            )}
+          </>
+        )}
+
+        <View className="h-10" />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fdfcfb' },
-  scrollContent: { padding: 25, paddingBottom: 50 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  greetingText: { fontSize: 14, color: '#888', fontWeight: 'bold', textTransform: 'uppercase' },
-  nameText: { fontSize: 28, fontWeight: 'bold', color: '#2A3439', letterSpacing: -0.5 },
-  profileIcon: { backgroundColor: '#e2d1c3', padding: 12, borderRadius: 50 },
-  subtitle: { fontSize: 15, color: '#555', marginBottom: 25, lineHeight: 22 },
-  
-  imageContainer: { width: '100%', height: 250, backgroundColor: '#f5f7fa', borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 15, overflow: 'hidden' },
-  imagePlaceholder: { alignItems: 'center' },
-  placeholderText: { marginTop: 10, color: '#aaa', fontSize: 14 },
-  imagePreview: { width: '100%', height: '100%' },
-  
-  actionButton: { flexDirection: 'row', backgroundColor: '#343541', paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 15 },
-  actionButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  
-  analyzeButton: { backgroundColor: '#2A3439', paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginBottom: 20 },
-  disabledButton: { backgroundColor: '#95a5a6' },
-  analyzeButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  
-  resultCard: { backgroundColor: '#fff', padding: 20, borderRadius: 15, borderWidth: 1, borderColor: '#eee', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 3 },
-  resultTitle: { fontSize: 16, fontWeight: 'bold', color: '#888', marginBottom: 10 },
-  resultValue: { fontSize: 18, fontWeight: '600', color: '#2A3439', lineHeight: 26 },
-  questionText: { fontSize: 15, fontWeight: 'bold', color: '#333', marginTop: 20, marginBottom: 15, textAlign: 'center' },
-  confirmButtons: { flexDirection: 'row', gap: 10 },
-  rejectBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: '#e74c3c', alignItems: 'center' },
-  rejectBtnText: { color: '#e74c3c', fontWeight: 'bold' },
-  confirmBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, backgroundColor: '#3498db', alignItems: 'center' },
-  confirmBtnText: { color: '#fff', fontWeight: 'bold' },
-
-  feedbackCard: { padding: 20, borderRadius: 15, marginTop: 10 },
-  feedbackSuccess: { backgroundColor: '#eafaf1', borderWidth: 1, borderColor: '#a3e4d7' },
-  feedbackWarning: { backgroundColor: '#fef5e7', borderWidth: 1, borderColor: '#f8c471' },
-  feedbackTitle: { fontSize: 17, fontWeight: 'bold', color: '#333' },
-  feedbackText: { fontSize: 15, color: '#444', lineHeight: 22 },
-  infoText: { marginTop: 15, fontSize: 12, color: '#888', fontStyle: 'italic', borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.05)', paddingTop: 10 },
-});

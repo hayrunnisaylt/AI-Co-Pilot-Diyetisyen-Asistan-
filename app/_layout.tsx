@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
-import '../global.css'; // YENİ EKLENEN SATIR
+import '../global.css'; 
 
 
 
@@ -9,7 +9,6 @@ export default function RootLayout() {
       {/* Giriş Ekranı */}
       <Stack.Screen name="index" />
       
-      {/* Kayıt Ekranı (Üstte geri butonu çıksın diye header'ı açabiliriz) */}
       <Stack.Screen 
         name="register" 
         options={{ 
@@ -19,7 +18,6 @@ export default function RootLayout() {
         }} 
       />
 
-      {/* Giriş yaptıktan sonra gidilen Tab yapısı */}
       <Stack.Screen name="(tabs)" />
     </Stack>
   );
