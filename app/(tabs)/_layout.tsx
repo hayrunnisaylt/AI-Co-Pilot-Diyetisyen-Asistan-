@@ -54,6 +54,16 @@ export default function TabLayout() {
           href: role === 'danisan' ? null : '/(tabs)/diyetisyen-home',
         }}
       />
+      {/* YEMEK KAYITLARI EKRANI (Sadece Danışan) */}
+      <Tabs.Screen
+        name="yemek-kayitlari"
+        options={{
+          title: 'Kayıtlarım',
+          tabBarIcon: ({ color }) => <Ionicons name="nutrition" size={24} color={color} />,
+          href: role === 'diyetisyen' ? null : '/(tabs)/yemek-kayitlari',
+        }}
+      />
+
       {/* MESAJLAR EKRANI (Sadece Danışan Görebilir) */}
       {/* GELEN KUTUSU (Mesajlar) EKRANI */}
       <Tabs.Screen
@@ -76,6 +86,26 @@ export default function TabLayout() {
           // href kısmını da 'chat' olarak güncelliyoruz
           // @ts-ignore
           href: role === 'diyetisyen' ? null : '/(tabs)/chat',
+        }}
+      />
+
+      {/* HASTALAR EKRANI (Sadece Diyetisyen) */}
+      <Tabs.Screen 
+        name="hastalar" 
+        options={{ 
+          title: 'Hastalar', 
+          tabBarIcon: ({ color }) => <Ionicons name="people" size={24} color={color} />,
+          href: role === 'diyetisyen' ? '/(tabs)/hastalar' : null 
+        }} 
+      />
+
+      {/* PROFİL EKRANI */}
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profil',
+          tabBarIcon: ({ color }) => <Ionicons name="person" size={24} color={color} />,
+          href: '/(tabs)/profile', // Herkes görebilir
         }}
       />
 

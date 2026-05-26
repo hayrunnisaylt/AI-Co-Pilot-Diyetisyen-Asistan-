@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -7,14 +7,15 @@ import {
   Alert, 
   ActivityIndicator, 
   ScrollView,
-  ImageBackground
+  ImageBackground,
+  TextInput
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 
 export default function HastaHome() {
   const [hastaAdi, setHastaAdi] = useState('Danışan');
@@ -37,6 +38,7 @@ export default function HastaHome() {
     hedef_kalori: 2000,
     bugun_su: 0.0,
     hedef_su: 2.5,
+    bugun_yemekler: [],
     dun_yemekler: [],
     boy: null,
     kilo: null
@@ -46,6 +48,7 @@ export default function HastaHome() {
   const [kiloInput, setKiloInput] = useState('');
 
   const router = useRouter();
+  const pathname = usePathname();
 
   const handleLogout = () => {
     Alert.alert(
@@ -76,8 +79,11 @@ export default function HastaHome() {
       }
       diyetisyenleriGetir();
     };
-    init();
-  }, []);
+    
+    if (pathname.includes('hasta-home')) {
+      init();
+    }
+  }, [pathname]);
 
   const kullaniciAdiniAl = async () => {
     const email = await AsyncStorage.getItem('email');
@@ -382,8 +388,33 @@ export default function HastaHome() {
               <Ionicons name="sparkles" size={18} color="#3b82f6" />
             </View>
             <Text className="text-lg font-semibold text-slate-800 leading-relaxed">
-              Fotoğrafta <Text className="text-blue-500">{sonuc.yemek_adi}</Text> (Tahmini {sonuc.kalori} kcal) görüyorum.
+              Fotoğrafta <Text className="text-blue-500">{sonuc.yemek_adi}</Text> görüyorum.
             </Text>
+
+            {/* Besin Değerleri Kartları */}
+            <View className="flex-row gap-2 mt-4">
+              <View className="flex-1 bg-red-50 p-3 rounded-2xl items-center border border-red-100">
+                <Ionicons name="flame" size={18} color="#ef4444" />
+                <Text className="text-red-600 text-lg font-bold mt-1">{sonuc.kalori}</Text>
+                <Text className="text-red-400 text-xs font-medium">kcal</Text>
+              </View>
+              <View className="flex-1 bg-indigo-50 p-3 rounded-2xl items-center border border-indigo-100">
+                <Ionicons name="fitness" size={18} color="#6366f1" />
+                <Text className="text-indigo-600 text-lg font-bold mt-1">{sonuc.protein || 0}g</Text>
+                <Text className="text-indigo-400 text-xs font-medium">Protein</Text>
+              </View>
+              <View className="flex-1 bg-amber-50 p-3 rounded-2xl items-center border border-amber-100">
+                <Ionicons name="water" size={18} color="#f59e0b" />
+                <Text className="text-amber-600 text-lg font-bold mt-1">{sonuc.yag || 0}g</Text>
+                <Text className="text-amber-400 text-xs font-medium">Yağ</Text>
+              </View>
+              <View className="flex-1 bg-emerald-50 p-3 rounded-2xl items-center border border-emerald-100">
+                <Ionicons name="leaf" size={18} color="#10b981" />
+                <Text className="text-emerald-600 text-lg font-bold mt-1">{sonuc.karbonhidrat || 0}g</Text>
+                <Text className="text-emerald-400 text-xs font-medium">Karb</Text>
+              </View>
+            </View>
+
             <Text className="text-base font-bold text-slate-800 mt-5 mb-4 text-center">Bu tahmini onaylıyor musunuz?</Text>
             
             <View className="flex-row gap-3">
@@ -416,6 +447,16 @@ export default function HastaHome() {
             <Text className="mt-4 text-xs text-slate-400 italic pt-3 border-t border-slate-200/50">
               Bu kayıt diyetisyeninize başarıyla iletildi!
             </Text>
+            <TouchableOpacity 
+              onPress={() => {
+                setSonuc(null); 
+                setImage(null);
+              }}
+            className="mt-6 bg-gray-100 py-4 rounded-2xl flex-row items-center justify-center border border-gray-200 active:bg-gray-200"
+            >
+              <Ionicons name="arrow-back-outline" size={22} color="#4b5563" />
+              <Text className="text-gray-600 font-bold text-base ml-2">Ana Sayfaya Dön</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -496,6 +537,54 @@ export default function HastaHome() {
                   Tebrikler! Bugünkü {ozet.hedef_su} litrelik su hedefine ulaştın. Vücudun sana teşekkür ediyor. 💧
                 </Text>
               </View>
+            )}
+
+            {/* Bugün Yediklerim */}
+            <View className="flex-row justify-between items-center mb-4 mt-2">
+              <Text className="text-xl font-bold text-slate-800">Bugün Yediklerim</Text>
+            </View>
+
+            {ozet.bugun_yemekler && ozet.bugun_yemekler.length > 0 ? (
+              ozet.bugun_yemekler.map((yemek: any, idx) => (
+                <View key={`bugun-${idx}`} className="bg-white p-4 rounded-2xl mb-3 border-l-4 border-blue-500 border-y border-r border-slate-100 shadow-sm">
+                  <View className="flex-row justify-between mb-1">
+                    <Text className="text-base font-bold text-slate-800">{yemek.yemek_adi}</Text>
+                    <Text className="text-xs text-slate-400 mt-1">{yemek.saat}</Text>
+                  </View>
+                  <Text className="text-sm font-bold text-red-500 mt-1">🔥 {yemek.kalori} kcal</Text>
+                  <View className="flex-row gap-3 mt-2">
+                    <View className="flex-1">
+                      <View className="flex-row justify-between mb-1">
+                        <Text className="text-xs text-indigo-500 font-semibold">Protein</Text>
+                        <Text className="text-xs text-indigo-400 font-bold">{yemek.protein || 0}g</Text>
+                      </View>
+                      <View className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <View className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.min(((yemek.protein || 0) / 50) * 100, 100)}%` }} />
+                      </View>
+                    </View>
+                    <View className="flex-1">
+                      <View className="flex-row justify-between mb-1">
+                        <Text className="text-xs text-amber-500 font-semibold">Yağ</Text>
+                        <Text className="text-xs text-amber-400 font-bold">{yemek.yag || 0}g</Text>
+                      </View>
+                      <View className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <View className="h-full bg-amber-500 rounded-full" style={{ width: `${Math.min(((yemek.yag || 0) / 40) * 100, 100)}%` }} />
+                      </View>
+                    </View>
+                    <View className="flex-1">
+                      <View className="flex-row justify-between mb-1">
+                        <Text className="text-xs text-emerald-500 font-semibold">Karb</Text>
+                        <Text className="text-xs text-emerald-400 font-bold">{yemek.karbonhidrat || 0}g</Text>
+                      </View>
+                      <View className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <View className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(((yemek.karbonhidrat || 0) / 60) * 100, 100)}%` }} />
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <Text className="text-slate-500 text-center italic mt-2 mb-6">Bugün için henüz bir öğün girmediniz. Yukarıdan fotoğraf çekebilirsiniz!</Text>
             )}
 
             {/* Geçmiş Öğünler */}
