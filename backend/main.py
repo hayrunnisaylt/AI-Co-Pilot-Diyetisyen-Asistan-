@@ -2,11 +2,22 @@ import os
 import shutil
 from datetime import datetime, timedelta
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+# pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
+# pyrefly: ignore [missing-import]
 from pydantic import BaseModel
+# pyrefly: ignore [missing-import]
 from pymongo import MongoClient
-from passlib.context import CryptContext
+
+# Python 3.12+ compatibility fix for passlib
+import configparser
+configparser.SafeConfigParser = configparser.ConfigParser
+
+# pyrefly: ignore [missing-import]
+import bcrypt
+# pyrefly: ignore [missing-import]
 from pyngrok import ngrok
+# pyrefly: ignore [missing-import]
 import uvicorn
 from ultralytics import YOLO
 import io
@@ -40,13 +51,20 @@ except Exception as e:
     print("❌ Bağlantı hatası:", e)
 
 # --- 3. ŞİFRE GÜVENLİĞİ (HASHING) ---
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode('utf-8'),
+            hashed_password.encode('utf-8')
+        )
+    except Exception:
+        return False
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-def get_password_hash(password):
-    return pwd_context.hash(password)
+def get_password_hash(password: str) -> str:
+    pwd_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(pwd_bytes, salt)
+    return hashed.decode('utf-8')
 
 # --- 4. VERİ MODELLERİ (PYDANTIC) ---
 class UserRegister(BaseModel):
@@ -98,8 +116,13 @@ async def register(user: UserRegister):
         "password_hash": hashed_password,
         "role": user.role
     }
-    users_collection.insert_one(new_user)
-    return {"status": "success", "message": "Kayıt başarılı!", "role": user.role}
+    result = users_collection.insert_one(new_user)
+    return {
+        "status": "success", 
+        "message": "Kayıt başarılı!", 
+        "role": user.role,
+        "user_id": str(result.inserted_id)
+    }
 
 @app.post("/login")
 async def login(user: UserLogin):
