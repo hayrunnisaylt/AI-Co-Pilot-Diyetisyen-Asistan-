@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -23,6 +23,29 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('danisan');
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const storedRole = await AsyncStorage.getItem('role');
+        const storedEmail = await AsyncStorage.getItem('email');
+        
+        if (storedRole && storedEmail) {
+          if (storedRole === 'diyetisyen') {
+            router.replace('/(tabs)/diyetisyen-home');
+          } else {
+            router.replace('/(tabs)/hasta-home');
+          }
+        } else {
+          setIsCheckingSession(false);
+        }
+      } catch (error) {
+        setIsCheckingSession(false);
+      }
+    };
+    checkSession();
+  }, []);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -72,6 +95,22 @@ export default function LoginScreen() {
       setIsLoading(false);
     }
   };
+
+  if (isCheckingSession) {
+    return (
+      <SafeAreaView className="flex-1 bg-slate-50 justify-center items-center">
+        <View className="items-center">
+          <View className="w-20 h-20 bg-emerald-100 rounded-full justify-center items-center mb-6">
+            <Ionicons name="leaf" size={40} color="#10b981" />
+          </View>
+          <ActivityIndicator size="large" color="#10b981" />
+          <Text className="mt-4 text-slate-500 font-medium text-base text-center">
+            Oturum Kontrol Ediliyor...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50">

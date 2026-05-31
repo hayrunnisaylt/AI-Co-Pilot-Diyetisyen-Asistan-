@@ -4,13 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { usePathname, useRouter } from 'expo-router';
+import { usePathname, router } from 'expo-router';
 
 export default function HastalarScreen() {
   const [diyetisyenEmail, setDiyetisyenEmail] = useState('');
   const [aktifHastalar, setAktifHastalar] = useState<any[]>([]);
   const pathname = usePathname();
-  const router = useRouter();
+  // router is imported directly as a singleton from expo-router
   const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
   useEffect(() => {

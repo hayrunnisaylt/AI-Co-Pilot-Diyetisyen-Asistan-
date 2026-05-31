@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Dimensions, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +15,17 @@ const COLORS = {
   kalori: '#ef4444',
 };
 
+const getColorClasses = (renk: string) => {
+  switch (renk) {
+    case 'rose': return { bg: 'bg-rose-50', border: 'border-rose-100 border-l-rose-500', text: 'text-rose-800', icon: '#f43f5e' };
+    case 'amber': return { bg: 'bg-amber-50', border: 'border-amber-100 border-l-amber-500', text: 'text-amber-800', icon: '#f59e0b' };
+    case 'indigo': return { bg: 'bg-indigo-50', border: 'border-indigo-100 border-l-indigo-500', text: 'text-indigo-800', icon: '#6366f1' };
+    case 'cyan': return { bg: 'bg-cyan-50', border: 'border-cyan-100 border-l-cyan-500', text: 'text-cyan-800', icon: '#06b6d4' };
+    case 'emerald': return { bg: 'bg-emerald-50', border: 'border-emerald-100 border-l-emerald-500', text: 'text-emerald-800', icon: '#10b981' };
+    default: return { bg: 'bg-slate-50', border: 'border-slate-100 border-l-slate-500', text: 'text-slate-800', icon: '#64748b' };
+  }
+};
+
 export default function HastaDetayScreen() {
   const { email, fullname } = useLocalSearchParams();
   const router = useRouter();
@@ -22,6 +33,152 @@ export default function HastaDetayScreen() {
   const [gecmis, setGecmis] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'ozet' | 'grafik' | 'gecmis'>('ozet');
+
+  // Tarih filtreleme state'leri
+  const [filterMode, setFilterMode] = useState<'all' | 'today' | '7days' | '30days' | 'custom'>('all');
+  const [startDate, setStartDate] = useState<string | null>(null);
+  const [endDate, setEndDate] = useState<string | null>(null);
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
+
+  // Özel takvim hesaplama yardımcı fonksiyonları
+  const getDaysInMonth = (year: number, month: number) => {
+    return new Date(year, month + 1, 0).getDate();
+  };
+
+  const getFirstDayOfMonth = (year: number, month: number) => {
+    const day = new Date(year, month, 1).getDay();
+    return day === 0 ? 6 : day - 1; // Pzt=0, Paz=6
+  };
+
+  const calendarMonths = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+
+  const getCalendarDays = () => {
+    const daysInMonth = getDaysInMonth(currentYear, currentMonth);
+    const firstDayIndex = getFirstDayOfMonth(currentYear, currentMonth);
+    const days = [];
+
+    // Önceki ay boşluk dolgusu
+    for (let i = 0; i < firstDayIndex; i++) {
+      days.push(null);
+    }
+
+    // Bu ayın günleri
+    for (let i = 1; i <= daysInMonth; i++) {
+      const monthStr = (currentMonth + 1).toString().padStart(2, '0');
+      const dayStr = i.toString().padStart(2, '0');
+      days.push(`${currentYear}-${monthStr}-${dayStr}`);
+    }
+
+    return days;
+  };
+
+  const handleDayPress = (dayStr: string) => {
+    if (!startDate || (startDate && endDate)) {
+      setStartDate(dayStr);
+      setEndDate(null);
+    } else if (startDate && !endDate) {
+      if (dayStr >= startDate) {
+        setEndDate(dayStr);
+      } else {
+        setStartDate(dayStr);
+        setEndDate(null);
+      }
+    }
+  };
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  
+  const getSevenDaysAgo = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 6);
+    return d.toISOString().split('T')[0];
+  };
+
+  const getThirtyDaysAgo = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 29);
+    return d.toISOString().split('T')[0];
+  };
+
+  // Reaktif filtreleme motoru
+  const getFilteredData = () => {
+    const rawYemekler = gecmis?.yemekler || [];
+    let filtered = [...rawYemekler];
+    const sevenDaysAgo = getSevenDaysAgo();
+    const thirtyDaysAgo = getThirtyDaysAgo();
+
+    if (filterMode === 'today') {
+      filtered = filtered.filter((y: any) => y.tarih.startsWith(todayStr));
+    } else if (filterMode === '7days') {
+      filtered = filtered.filter((y: any) => {
+        const d = y.tarih.split(' ')[0];
+        return d >= sevenDaysAgo && d <= todayStr;
+      });
+    } else if (filterMode === '30days') {
+      filtered = filtered.filter((y: any) => {
+        const d = y.tarih.split(' ')[0];
+        return d >= thirtyDaysAgo && d <= todayStr;
+      });
+    } else if (filterMode === 'custom') {
+      if (startDate) {
+        filtered = filtered.filter((y: any) => y.tarih.split(' ')[0] >= startDate);
+      }
+      if (endDate) {
+        filtered = filtered.filter((y: any) => y.tarih.split(' ')[0] <= endDate);
+      }
+    }
+
+    // Filtrelenmiş yemek kayıtlarına göre günlük özet istatistikleri yeniden hesapla
+    const gunluk_istatistik_map: { [gun: string]: any } = {};
+    filtered.forEach((row: any) => {
+      const gun = row.tarih.split(' ')[0];
+      if (!gunluk_istatistik_map[gun]) {
+        gunluk_istatistik_map[gun] = { kalori: 0, protein: 0, yag: 0, karbonhidrat: 0, ogun_sayisi: 0 };
+      }
+      gunluk_istatistik_map[gun].kalori += row.kalori || 0;
+      gunluk_istatistik_map[gun].protein += row.protein || 0;
+      gunluk_istatistik_map[gun].yag += row.yag || 0;
+      gunluk_istatistik_map[gun].karbonhidrat += row.karbonhidrat || 0;
+      gunluk_istatistik_map[gun].ogun_sayisi += 1;
+    });
+
+    const sortedDays = Object.keys(gunluk_istatistik_map).sort();
+    const gunlukIstatistikFiltered = sortedDays.map((gun) => {
+      const stat = gunluk_istatistik_map[gun];
+      try {
+        const [yil, ay, gunNo] = gun.split('-');
+        return {
+          tarih: gun,
+          gun_kisa: `${gunNo}/${ay}`,
+          ...stat
+        };
+      } catch {
+        return {
+          tarih: gun,
+          gun_kisa: gun,
+          ...stat
+        };
+      }
+    });
+
+    const toplamFiltered = {
+      kalori: Math.round(filtered.reduce((sum: number, y: any) => sum + (y.kalori || 0), 0)),
+      protein: Math.round(filtered.reduce((sum: number, y: any) => sum + (y.protein || 0), 0)),
+      yag: Math.round(filtered.reduce((sum: number, y: any) => sum + (y.yag || 0), 0)),
+      karbonhidrat: Math.round(filtered.reduce((sum: number, y: any) => sum + (y.karbonhidrat || 0), 0)),
+      ogun_sayisi: filtered.length
+    };
+
+    return {
+      yemekler: filtered,
+      gunlukIstatistik: gunlukIstatistikFiltered,
+      toplam: toplamFiltered
+    };
+  };
+
+  const { yemekler: filteredYemekler, gunlukIstatistik: filteredGunlukIstatistik, toplam: filteredToplam } = getFilteredData();
 
   const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -59,9 +216,9 @@ export default function HastaDetayScreen() {
     } catch { return t; }
   };
 
-  const toplam = gecmis?.toplam || { kalori: 0, protein: 0, yag: 0, karbonhidrat: 0, ogun_sayisi: 0 };
-  const gunluk = gecmis?.gunluk_istatistik || [];
-  const yemekler = gecmis?.yemekler || [];
+  const toplam = filteredToplam;
+  const gunluk = filteredGunlukIstatistik;
+  const yemekler = filteredYemekler;
 
   const makroTotal = toplam.protein + toplam.yag + toplam.karbonhidrat;
   const pieData = makroTotal > 0 ? [
@@ -105,6 +262,200 @@ export default function HastaDetayScreen() {
         </View>
       </View>
 
+      {/* TARİH FİLTRELERİ */}
+      <View className="px-5 mt-4">
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
+          {[
+            { key: 'all', label: 'Tüm Zamanlar', icon: 'infinite' },
+            { key: 'today', label: 'Bugün', icon: 'today' },
+            { key: '7days', label: 'Son 7 Gün', icon: 'calendar' },
+            { key: '30days', label: 'Son 30 Gün', icon: 'calendar-outline' },
+            { key: 'custom', label: startDate && endDate ? `${formatTarih(startDate)} - ${formatTarih(endDate)}` : 'Özel Aralık...', icon: 'options' },
+          ].map((chip) => {
+            const isSelected = filterMode === chip.key;
+            return (
+              <TouchableOpacity
+                key={chip.key}
+                onPress={() => {
+                  if (chip.key === 'custom') {
+                    setFilterMode('custom');
+                    setShowCalendarModal(true);
+                  } else {
+                    setFilterMode(chip.key as any);
+                  }
+                }}
+                className={`flex-row items-center px-4 py-2 rounded-full mr-2 border ${
+                  isSelected 
+                    ? 'bg-indigo-500 border-indigo-500 shadow-sm' 
+                    : 'bg-white border-slate-200 shadow-sm'
+                }`}
+                activeOpacity={0.7}
+              >
+                <Ionicons 
+                  name={chip.icon as any} 
+                  size={12} 
+                  color={isSelected ? '#fff' : '#64748b'} 
+                  style={{ marginRight: 4 }} 
+                />
+                <Text className={`text-[11px] font-bold ${isSelected ? 'text-white' : 'text-slate-600'}`}>
+                  {chip.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* ÖZEL TAKVİM MODALI */}
+      <Modal
+        visible={showCalendarModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowCalendarModal(false)}
+      >
+        <View className="flex-1 bg-black/60 justify-center items-center px-5">
+          <View className="bg-white rounded-[32px] p-6 w-full max-w-md border border-slate-100 shadow-2xl">
+            {/* Modal Başlığı */}
+            <View className="flex-row justify-between items-center mb-6">
+              <View>
+                <Text className="text-xl font-extrabold text-slate-800">Tarih Aralığı Seçin</Text>
+                <Text className="text-xs text-slate-400 mt-0.5">Başlangıç ve bitiş tarihlerine dokunun</Text>
+              </View>
+              <TouchableOpacity 
+                onPress={() => setShowCalendarModal(false)}
+                className="w-8 h-8 bg-slate-100 rounded-full items-center justify-center"
+              >
+                <Ionicons name="close" size={20} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Ay ve Yıl Seçimi */}
+            <View className="flex-row justify-between items-center mb-5 bg-slate-50 p-2 rounded-2xl border border-slate-100">
+              <TouchableOpacity 
+                onPress={() => {
+                  if (currentMonth === 0) {
+                    setCurrentMonth(11);
+                    setCurrentYear(prev => prev - 1);
+                  } else {
+                    setCurrentMonth(prev => prev - 1);
+                  }
+                }}
+                className="w-10 h-10 bg-white rounded-xl items-center justify-center border border-slate-200/50 shadow-sm"
+              >
+                <Ionicons name="chevron-back" size={20} color="#1e293b" />
+              </TouchableOpacity>
+
+              <Text className="text-base font-bold text-slate-700">
+                {calendarMonths[currentMonth]} {currentYear}
+              </Text>
+
+              <TouchableOpacity 
+                onPress={() => {
+                  if (currentMonth === 11) {
+                    setCurrentMonth(0);
+                    setCurrentYear(prev => prev + 1);
+                  } else {
+                    setCurrentMonth(prev => prev + 1);
+                  }
+                }}
+                className="w-10 h-10 bg-white rounded-xl items-center justify-center border border-slate-200/50 shadow-sm"
+              >
+                <Ionicons name="chevron-forward" size={20} color="#1e293b" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Gün İsimleri Satırı */}
+            <View className="flex-row mb-2">
+              {['Pt', 'Sa', 'Ça', 'Pe', 'Cu', 'Ct', 'Pz'].map((dayName, idx) => (
+                <View key={idx} className="flex-1 items-center py-1">
+                  <Text className="text-xs font-bold text-slate-400">{dayName}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Günler Izgarası (Grid) */}
+            <View className="flex-row flex-wrap">
+              {getCalendarDays().map((day, idx) => {
+                if (day === null) {
+                  return <View key={`empty-${idx}`} style={{ width: '14.28%', height: 40 }} />;
+                }
+
+                const dayNum = parseInt(day.split('-')[2]);
+                const isStart = day === startDate;
+                const isEnd = day === endDate;
+                const isWithinRange = startDate && endDate && day > startDate && day < endDate;
+
+                let dayBgClass = 'bg-transparent';
+                let dayTextClass = 'text-slate-800';
+
+                if (isStart || isEnd) {
+                  dayBgClass = 'bg-indigo-500 rounded-full';
+                  dayTextClass = 'text-white font-extrabold';
+                } else if (isWithinRange) {
+                  dayBgClass = 'bg-indigo-50 rounded-lg';
+                  dayTextClass = 'text-indigo-600 font-bold';
+                }
+
+                return (
+                  <TouchableOpacity
+                    key={day}
+                    onPress={() => handleDayPress(day)}
+                    style={{ width: '14.28%', height: 40 }}
+                    className={`justify-center items-center ${dayBgClass}`}
+                  >
+                    <Text className={`text-sm ${dayTextClass}`}>{dayNum}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Seçim Özeti */}
+            <View className="mt-6 pt-4 border-t border-slate-100">
+              <View className="flex-row justify-between mb-4">
+                <View>
+                  <Text className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Başlangıç</Text>
+                  <Text className="text-sm font-semibold text-slate-700 mt-0.5">
+                    {startDate ? formatTarih(startDate) : 'Seçilmedi'}
+                  </Text>
+                </View>
+                <View className="items-end">
+                  <Text className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Bitiş</Text>
+                  <Text className="text-sm font-semibold text-slate-700 mt-0.5">
+                    {endDate ? formatTarih(endDate) : 'Seçilmedi'}
+                  </Text>
+                </View>
+              </View>
+
+              <View className="flex-row gap-3">
+                <TouchableOpacity 
+                  onPress={() => {
+                    setStartDate(null);
+                    setEndDate(null);
+                    setFilterMode('all');
+                    setShowCalendarModal(false);
+                  }}
+                  className="flex-1 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl items-center justify-center active:bg-slate-100"
+                >
+                  <Text className="text-slate-500 font-bold text-sm">Temizle</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  onPress={() => {
+                    if (startDate && !endDate) {
+                      setEndDate(startDate); // Tek tarih seçildiyse otomatik bitiş yap
+                    }
+                    setShowCalendarModal(false);
+                  }}
+                  className="flex-1 py-3.5 bg-indigo-500 rounded-2xl items-center justify-center active:opacity-80 shadow-sm"
+                >
+                  <Text className="text-white font-bold text-sm">Filtreyi Uygula</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* TAB SWITCH */}
       <View className="flex-row mx-5 mt-4 bg-white rounded-2xl p-1 border border-slate-200">
         {[
@@ -129,6 +480,25 @@ export default function HastaDetayScreen() {
         {/* ===== ÖZET SEKMESİ ===== */}
         {activeTab === 'ozet' && (
           <>
+            {/* Yapay Zeka Klinik Değerlendirmeleri */}
+            {ozet?.analizler && ozet.analizler.length > 0 && (
+              <View className="mb-5">
+                <Text className="text-base font-extrabold text-slate-800 mb-3">🤖 AI Klinik Karar Destek Çıkarımları</Text>
+                {ozet.analizler.map((analiz: any, index: number) => {
+                  const style = getColorClasses(analiz.renk);
+                  return (
+                    <View key={index} className={`${style.bg} p-4 rounded-2xl mb-2.5 border border-l-4 ${style.border} shadow-sm`}>
+                      <View className="flex-row items-center mb-1 gap-2">
+                        <Ionicons name={analiz.ikon} size={18} color={style.icon} />
+                        <Text className={`font-bold text-sm ${style.text}`}>{analiz.baslik}</Text>
+                      </View>
+                      <Text className="text-slate-600 text-xs leading-relaxed mt-1 font-semibold">{analiz.mesaj}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
             {/* Su */}
             <View className="bg-cyan-50 p-5 rounded-3xl mb-4 flex-row items-center border border-cyan-100">
               <View className="w-14 h-14 bg-cyan-100 rounded-full items-center justify-center mr-4">

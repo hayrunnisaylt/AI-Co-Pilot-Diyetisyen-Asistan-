@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { useRouter, usePathname } from 'expo-router';
+import { usePathname, router } from 'expo-router';
 
 const RENK_MAP: Record<string, { bg: string; border: string; text: string; iconColor: string }> = {
   rose:    { bg: 'bg-rose-50',    border: 'border-rose-200',    text: 'text-rose-800',    iconColor: '#f43f5e' },
@@ -32,8 +32,12 @@ export default function DiyetisyenHome() {
   const [bekleyenIstekler, setBekleyenIstekler] = useState<any[]>([]);
   const [aiAnalizler, setAiAnalizler] = useState<any[]>([]);
   const [aiLoading, setAiLoading] = useState(true);
+
+  // Hastaların sadece bugünkü yemeklerini süzmek için reaktif filtre
+  const bugunTarih = new Date().toISOString().split('T')[0];
+  const bugununHastalarinYemekleri = hastalarinYemekleri.filter((yemek: any) => yemek.tarih && yemek.tarih.startsWith(bugunTarih));
   
-  const router = useRouter();
+  // router is imported directly as a singleton from expo-router
   const pathname = usePathname();
 
   const handleLogout = () => {
@@ -255,19 +259,34 @@ export default function DiyetisyenHome() {
         ) : (
           aiAnalizler.map((analiz: any, index: number) => {
             const renk = RENK_MAP[analiz.renk] || RENK_MAP.slate;
+            const hasPatient = !!analiz.hasta_email;
+            
+            const CardComponent = hasPatient ? TouchableOpacity : View;
+            const extraProps = hasPatient ? {
+              onPress: () => router.push({ 
+                pathname: '/hasta-detay', 
+                params: { email: analiz.hasta_email, fullname: analiz.hasta_fullname } 
+              }),
+              activeOpacity: 0.7
+            } : {};
+
             return (
-              <View 
+              <CardComponent 
                 key={`ai-${index}`} 
-                className={`p-4 rounded-2xl mb-3 border ${renk.bg} ${renk.border}`}
+                className={`p-4 rounded-2xl mb-3 border ${renk.bg} ${renk.border} shadow-sm`}
+                {...extraProps}
               >
                 <View className="flex-row items-center gap-2 mb-2">
-                  <View className="w-8 h-8 bg-white rounded-full items-center justify-center">
+                  <View className="w-8 h-8 bg-white rounded-full items-center justify-center shadow-xs">
                     <Ionicons name={(analiz.ikon || 'sparkles') as any} size={18} color={renk.iconColor} />
                   </View>
                   <Text className={`text-sm font-bold flex-1 ${renk.text}`}>{analiz.baslik}</Text>
+                  {hasPatient && (
+                    <Ionicons name="chevron-forward" size={16} color={renk.iconColor} />
+                  )}
                 </View>
                 <Text className="text-slate-600 text-sm leading-relaxed ml-10">{analiz.mesaj}</Text>
-              </View>
+              </CardComponent>
             );
           })
         )}
@@ -277,8 +296,8 @@ export default function DiyetisyenHome() {
           <Text className="text-xl font-bold text-slate-800">Hastalarınız Neler Yiyor?</Text>
         </View>
 
-        {hastalarinYemekleri && hastalarinYemekleri.length > 0 ? (
-          hastalarinYemekleri.map((yemek: any, index) => (
+        {bugununHastalarinYemekleri && bugununHastalarinYemekleri.length > 0 ? (
+          bugununHastalarinYemekleri.map((yemek: any, index) => (
             <View key={index} className="bg-white p-4 rounded-3xl mb-4 border border-slate-200 shadow-sm flex-row items-center">
               <View className="w-20 h-20 bg-indigo-50 rounded-2xl mr-4 items-center justify-center border border-indigo-100">
                 <Ionicons name="fast-food" size={32} color="#6366f1" />
@@ -304,7 +323,7 @@ export default function DiyetisyenHome() {
         ) : (
           <View className="bg-slate-100 p-8 rounded-3xl items-center border border-slate-200 border-dashed">
             <Ionicons name="restaurant-outline" size={48} color="#94a3b8" className="mb-3" />
-            <Text className="text-slate-500 font-medium text-center">Şu an gösterilecek yemek kaydı yok. Hastalarınız yemek eklediğinde burada görünecek.</Text>
+            <Text className="text-slate-500 font-medium text-center">Hastalarınız bugün henüz hiçbir yemek kaydı eklemedi.</Text>
           </View>
         )}
         

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -7,48 +7,85 @@ import {
   TouchableOpacity, 
   ScrollView, 
   KeyboardAvoidingView, 
-  Platform 
+  Platform,
+  ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 
 export default function Sohbet() {
   const [mesajInput, setMesajInput] = useState('');
   const scrollViewRef = useRef<ScrollView>(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
+
+  useEffect(() => {
+    const fetchEmail = async () => {
+      const email = await AsyncStorage.getItem('email');
+      if (email) setUserEmail(email);
+    };
+    fetchEmail();
+  }, []);
 
   // Başlangıç (Örnek) Mesajları
   const [mesajlar, setMesajlar] = useState([
     { id: '1', text: 'Merhaba! Ben senin AI Diyet Koçunum. Bugün sana nasıl yardımcı olabilirim?', sender: 'ai', time: '10:00' },
   ]);
 
-  const mesajGonder = () => {
+  const API_URL = process.env.EXPO_PUBLIC_API_URL;
+
+  const mesajGonder = async () => {
     if (mesajInput.trim() === '') return;
+
+    const userMsgText = mesajInput;
 
     // Kullanıcının mesajını ekle
     const yeniKullaniciMesaji = {
       id: Date.now().toString(),
-      text: mesajInput,
+      text: userMsgText,
       sender: 'user',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
     setMesajlar(prev => [...prev, yeniKullaniciMesaji]);
     setMesajInput('');
+    setIsTyping(true);
 
     // Scroll'u en alta kaydır
     setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
 
-    // AI Koç'un otomatik cevap simülasyonu
-    setTimeout(() => {
+    try {
+      const response = await axios.post(`${API_URL}/ai-chat`, {
+        mesaj: userMsgText,
+        hasta_email: userEmail || 'danisan@gmail.com'
+      }, {
+        headers: { 'ngrok-skip-browser-warning': 'true' }
+      });
+
+      const aiCevapText = response.data.cevap || 'Şu an yanıt veremiyorum, lütfen daha sonra tekrar deneyiniz.';
+
       const aiCevap = {
         id: (Date.now() + 1).toString(),
-        text: 'Harika bir soru! Bunu hemen analiz edip diyetisyenine de not olarak düşüyorum. Başka bir hedefin var mı?',
+        text: aiCevapText,
         sender: 'ai',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMesajlar(prev => [...prev, aiCevap]);
+    } catch (error) {
+      console.error("AI Chat Hatası:", error);
+      const hataMesaji = {
+        id: (Date.now() + 1).toString(),
+        text: "Üzgünüm, şu an bağlantı kuramadım. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.",
+        sender: 'ai',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      setMesajlar(prev => [...prev, hataMesaji]);
+    } finally {
+      setIsTyping(false);
       setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
-    }, 1500);
+    }
   };
 
   return (
@@ -104,6 +141,17 @@ export default function Sohbet() {
               </View>
             </View>
           ))}
+
+          {isTyping && (
+            <View style={[styles.messageBubbleWrapper, styles.messageAiWrapper]}>
+              <View style={[styles.messageBubble, styles.messageAi, { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 12 }]}>
+                <ActivityIndicator size="small" color="#27ae60" style={{ marginRight: 4 }} />
+                <Text style={[styles.messageText, styles.messageTextAi, { color: '#666', fontStyle: 'italic' }]}>
+                  AI Koç düşünüyor...
+                </Text>
+              </View>
+            </View>
+          )}
         </ScrollView>
 
         {/* MESAJ YAZMA ALANI */}

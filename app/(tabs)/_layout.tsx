@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, View, Platform } from 'react-native';
 
 export default function TabLayout() {
   const [role, setRole] = useState<string | null>(null);
@@ -29,8 +29,28 @@ export default function TabLayout() {
   return (
     <Tabs screenOptions={{ 
       headerShown: false, 
-      tabBarActiveTintColor: '#2A3439',
-      tabBarStyle: { paddingBottom: 5, paddingTop: 5, height: 60 }
+      tabBarActiveTintColor: role === 'diyetisyen' ? '#6366f1' : '#10b981',
+      tabBarInactiveTintColor: '#94a3b8',
+      tabBarStyle: { 
+        backgroundColor: '#ffffff',
+        borderTopWidth: 0,
+        height: Platform.OS === 'ios' ? 96 : 76,
+        paddingTop: 12,
+        paddingBottom: Platform.OS === 'ios' ? 34 : 14,
+        shadowColor: '#000000',
+        shadowOpacity: 0.08,
+        shadowRadius: 16,
+        shadowOffset: { width: 0, height: -6 },
+        elevation: 10,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+      },
+      tabBarLabelStyle: {
+        fontSize: 11,
+        fontWeight: '700',
+        marginTop: 4,
+        letterSpacing: 0.2,
+      },
     }}>
       
       {/* HASTA EKRANI */}
